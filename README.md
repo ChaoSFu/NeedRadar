@@ -47,4 +47,16 @@ Nginx :80/:443 → Next.js :3000
 
 The deployment recipe is in [deployment/systemd/needradar-api.service](deployment/systemd/needradar-api.service), [deployment/systemd/needradar-web.service](deployment/systemd/needradar-web.service), and [deployment/nginx/needradar.conf](deployment/nginx/needradar.conf).
 
+After the backend venv and front-end build exist, use the single management script instead of `nohup` or manually backgrounding processes:
+
+```bash
+sudo ./scripts/needradar-service install
+sudo ./scripts/needradar-service start
+sudo ./scripts/needradar-service restart
+sudo ./scripts/needradar-service status
+sudo ./scripts/needradar-service logs -f
+```
+
+Both units use `KillMode=control-group`, so a stop or restart terminates Uvicorn workers, npm, and Next.js child processes together rather than leaving orphaned processes.
+
 See [architecture.md](architecture.md), [route-map.md](route-map.md), and [implementation-checklist.md](implementation-checklist.md).

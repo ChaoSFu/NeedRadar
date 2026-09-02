@@ -1,6 +1,9 @@
 [Unit]
 Description=NeedRadar FastAPI
-After=network.target
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -9,8 +12,13 @@ Group=needradar
 WorkingDirectory=/opt/needradar/backend
 EnvironmentFile=/opt/needradar/backend/.env
 ExecStart=/opt/needradar/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 2
-Restart=always
+Restart=on-failure
 RestartSec=5
+TimeoutStopSec=30
+# Stop the complete service cgroup, including Uvicorn worker descendants.
+KillMode=control-group
+KillSignal=SIGTERM
+SendSIGKILL=yes
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full

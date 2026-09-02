@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+# Manage NeedRadar through systemd. Do not use nohup, background '&', or PID files.
+set -Eeuo pipefail
+
+readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly PROJECT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
+readonly API_UNIT="needradar-api.service"
+readonly WEB_UNIT="needradar-web.service"
+readonly API_URL="http://127.0.0.1:8000/api/health"
+readonly WEB_URL="http://127.0.0.1:3000/radar"
+
+usage() {
+  cat <<'EOF'
+Usage: sudo ./scripts/needradar-service <command>
+
+Commands:
+  install   Install path-adjusted systemd units and enable both services.
+  start     Start API and web services in the background.
+  stop      Stop both services and all child processes.
+  restart   Cleanly stop then start both services.
+  status    Show systemd status for both services.
+  logs      Show the latest logs. Use "logs -f" to follow them.
+  health    Check API and web endpoints on loopback.
+EOF
+}
+
+require_root() {
+  if [[ $EUID -ne 0 ]]; then
+    echo "Run this command with sudo or as root." >&2
+    exit 1
+  fi
+}
+
+install_units() {
+  require_root
+  if [[ ! -x "$PROJECT_DIR/backend/.venv/bin/uvicorn" ]]; then
+    echo "Missing backend venv. Install backend requirements before installing services." >&2
+    exit 1
+  fi
+  if [[ ! -d "$PROJECT_DIR/frontend/.next" ]]; then
+    echo "Missing frontend production build. Run npm run build first." >&2
+    exit 1
+  fi
+
+  sed "s|/opt/needradar|$PROJECT_DIR|g" "$PROJECT_DIR/deployment/systemd/needradar-api.service" \
+    > "/etc/systemd/system/$API_UNIT"
+  sed "s|/opt/needradar|$PROJECT_DIR|g" "$PROJECT_DIR/deployment/systemd/needradar-web.service" \
+    > "/etc/systemd/system/$WEB_UNIT"
+  chmod 0644 "/etc/systemd/system/$API_UNIT" "/etc/systemd/system/$WEB_UNIT"
+  systemctl daemon-reload
+  systemctl enable "$API_UNIT" "$WEB_UNIT"
+  echo "Installed systemd units for $PROJECT_DIR"
+}
+
+is_active() {
+  systemctl is-active --quiet "$1"
+}
+
+api_health() {
+  curl --fail --silent --show-error "$API_URL"
+  echo
+}
+
+web_health() {
+  curl --fail --silent --show-error "$WEB_URL" >/dev/null
+}
+
+health() {
+  api_health
+  web_health
+  echo "API and web service are healthy."
+}
+
+wait_for_api() {
+  local attempt
+  for attempt in $(seq 1 30); do
+    if api_health >/dev/null 2>&1; then
+      return 0
+    fi
+    if ! is_active "$API_UNIT"; then
+      echo "API exited before becoming healthy. Run: $0 logs" >&2
+      return 1
+    fi
+    sleep 1
+  done
+  echo "API did not become healthy within 30 seconds. Run: $0 logs" >&2
+  return 1
+}
+
+wait_for_web() {
+  local attempt
+  for attempt in $(seq 1 30); do
+    if web_health >/dev/null 2>&1; then
+      health
+      return 0
+    fi
+    if ! is_active "$WEB_UNIT"; then
+      echo "Web service exited before becoming healthy. Run: $0 logs" >&2
+      return 1
+    fi
+    sleep 1
+  done
+  echo "Web service did not become healthy within 30 seconds. Run: $0 logs" >&2
+  return 1
+}
+
+assert_port_free() {
+  local port="$1"
+  local listeners
+  listeners="$(ss -ltnp "sport = :$port" 2>/dev/null || true)"
+  if [[ $(printf '%s\n' "$listeners" | wc -l) -gt 1 ]]; then
+    echo "Port $port is still occupied by a process outside the service cgroup:" >&2
+    printf '%s\n' "$listeners" >&2
+    echo "Stop that process explicitly before retrying; this script will not run pkill." >&2
+    return 1
+  fi
+  return 0
+}
+
+stop_services() {
+  systemctl stop "$WEB_UNIT"
+  systemctl stop "$API_UNIT"
+  assert_port_free 3000
+  assert_port_free 8000
+  echo "NeedRadar services and their child processes have stopped."
+}
+
+start_services() {
+  if ! is_active "$API_UNIT"; then
+    assert_port_free 8000
+    systemctl start "$API_UNIT"
+  fi
+  wait_for_api
+  if ! is_active "$WEB_UNIT"; then
+    assert_port_free 3000
+    systemctl start "$WEB_UNIT"
+  fi
+  wait_for_web
+}
+
+command_name="${1:-}"
+case "$command_name" in
+  install)
+    install_units
+    ;;
+  start)
+    require_root
+    start_services
+    ;;
+  stop)
+    require_root
+    stop_services
+    ;;
+  restart)
+    require_root
+    stop_services
+    start_services
+    ;;
+  status)
+    require_root
+    systemctl --no-pager --full status "$API_UNIT" "$WEB_UNIT"
+    ;;
+  logs)
+    require_root
+    if [[ "${2:-}" == "-f" ]]; then
+      exec journalctl -f -u "$API_UNIT" -u "$WEB_UNIT"
+    fi
+    journalctl --no-pager -n 100 -u "$API_UNIT" -u "$WEB_UNIT"
+    ;;
+  health)
+    health
+    ;;
+  -h|--help|help|"")
+    usage
+    ;;
+  *)
+    echo "Unknown command: $command_name" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

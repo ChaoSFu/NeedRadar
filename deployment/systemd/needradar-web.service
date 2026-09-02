@@ -1,6 +1,10 @@
 [Unit]
 Description=NeedRadar Next.js
-After=network.target needradar-api.service
+Wants=network-online.target
+After=network-online.target needradar-api.service
+Requires=needradar-api.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -10,9 +14,15 @@ WorkingDirectory=/opt/needradar/frontend
 Environment=NODE_ENV=production
 Environment=PORT=3000
 Environment=API_INTERNAL_ORIGIN=http://127.0.0.1:8000
-ExecStart=/usr/bin/npm run start
-Restart=always
+# Invoke Next directly, so npm is not an additional process parent.
+ExecStart=/usr/bin/node /opt/needradar/frontend/node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 3000
+Restart=on-failure
 RestartSec=5
+TimeoutStopSec=30
+# npm and Next.js descendants are terminated together on stop/restart.
+KillMode=control-group
+KillSignal=SIGTERM
+SendSIGKILL=yes
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
