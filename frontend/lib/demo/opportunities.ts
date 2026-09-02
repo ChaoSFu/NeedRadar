@@ -1,6 +1,6 @@
 import type { Opportunity } from "@/types/opportunity";
 
-const base = { problem: "目标用户需要在关键任务前获得及时、可靠且个性化的支持。", jobToBeDone: "在高压场景中更快完成准备并建立信心。", painPoints: ["准备成本高", "反馈不够具体", "现有工具不连续"], workarounds: ["模板搜索", "人工咨询", "通用聊天机器人"], aiAngle: "用多轮、情境化的 AI 工作流提供即时反馈。", possibleMvp: "一个聚焦核心场景的 Web MVP：输入背景，生成任务并给出可执行反馈。" };
+const base = { problem: "目标用户需要在关键任务前获得及时、可靠且个性化的支持。", targetUser: "有明确任务目标、愿意尝试 AI 工作流的个人用户。", jobToBeDone: "在高压场景中更快完成准备并建立信心。", painPoints: ["准备成本高", "反馈不够具体", "现有工具不连续"], workarounds: ["模板搜索", "人工咨询", "通用聊天机器人"], aiAngle: "用多轮、情境化的 AI 工作流提供即时反馈。", possibleMvp: "一个聚焦核心场景的 Web MVP：输入背景，生成任务并给出可执行反馈。" };
 const items: Array<[string,string,string,string,number,number,"Rising"|"Surging"|"Stable",string]> = [
  ["AI 英文面试模拟","China · Shanghai","Career", "外企候选人希望进行更真实、可追问的英文面试练习。",88,72,"Surging","外企岗位回暖，用户主动寻找按简历追问的模拟工具。"],
  ["AI 高校答辩模拟","China · Beijing","Education","研究生需要在答辩前反复模拟评委问题。",82,68,"Rising","毕业季临近，答辩焦虑相关讨论持续增多。"],
