@@ -15,9 +15,11 @@ The database design is documented in [backend/SCHEMA.md](backend/SCHEMA.md); it 
 
 Start the backend in an isolated Python virtual environment:
 
+Python **3.10 or newer** is required (Python 3.11 is the deployment baseline). Do not create the venv with the legacy system Python shipped by older RPM-based servers.
+
 ```bash
 cd backend
-python3 -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 pip install --requirement requirements.txt
 cp .env.example .env
