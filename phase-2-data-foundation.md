@@ -211,8 +211,10 @@ CREATE TABLE demand_topics (
     name               text NOT NULL,
     summary            text,
     category           text,
-    centroid           vector(1024) NOT NULL,   -- pgvector，维度随所选模型
-    embedding_model    text NOT NULL,
+    -- 2a 阶段 clustering_version = 'identity@1'，不需要向量，两列留空。
+    -- 2b 接入 embedding 后才写入，届时 clustering_version = 'embedding@1'。
+    centroid           vector(1024),            -- pgvector，维度随所选模型
+    embedding_model    text,
     clustering_version text NOT NULL,
     first_seen_at      timestamptz NOT NULL,
     last_seen_at       timestamptz NOT NULL,
@@ -241,8 +243,17 @@ CREATE TABLE topic_signals (
 );
 ```
 
-**稳定性规则。** 归属是确定性且增量的：把查询词做 embedding，与现有质心比较，
-挂到相似度高于 `TOPIC_MATCH_THRESHOLD` 的最近 topic 上，只有全都不匹配时才新建 topic。
+**稳定性规则。** 归属永远是确定性的，具体实现由 `clustering_version` 选择：
+
+- **`identity@1`（2a，当前）**：一个 `(query_text, market)` 就是一个 topic。
+  这是一个退化但完全合法的聚类 —— 确定性、天然 100% 稳定、不需要任何模型。
+  别名通过 `topic_queries` **手工合并**，立刻可用。
+- **`embedding@1`（2b，之后）**：把查询词做 embedding，与现有质心比较，
+  挂到相似度高于 `TOPIC_MATCH_THRESHOLD` 的最近 topic 上，全都不匹配时才新建 topic。
+
+切换实现走已有的版本化回填流程，不需要改表结构。
+而 2a 阶段手工合并出来的别名集合，**正好就是 2b 标定阈值所需的人工标注 ground truth**
+（见第九节标定流程第 1 步）—— 这段手工工作不会浪费。
 
 **LLM 绝不参与决定簇的成员归属** —— 非确定性的分组会让 topic 在两次运行之间变成不同的对象，
 那么每一个 momentum 数字测量的都将是簇的漂移而不是需求。LLM 在 topic 存在之后才介入命名。
@@ -368,6 +379,12 @@ Google Trends 不在其中。把无效源计入验证票数，等于用噪音抬
 
 ## 七、验收标准
 
+Phase 2 分两段。**2a 先把数据处理与展示打通**，不引入模型；
+2b 再替换聚类实现并补上叙事字段。分段的依据是：
+2a 的每一项都不依赖任何外部模型或商业数据源，因此进度完全可控。
+
+### Phase 2a — 数据处理与展示闭环
+
 | 能力 | 要求 |
 | --- | --- |
 | PostgreSQL + Alembic 迁移 | ✅ |
@@ -380,9 +397,24 @@ Google Trends 不在其中。把无效源计入验证票数，等于用噪音抬
 | CSV adapter，且是 Phase 2 唯一必需的 adapter | ✅ |
 | **同一查询集合在 ≥3 个不同时间点完成采集** | ✅ |
 | **由该历史算出非平凡的 Momentum** | ✅ |
-| **Topic 归属稳定：同输入在多次运行间 topic id 不变** | ✅ |
+| Topic 归属为 `identity@1`，`topic_queries` 支持手工合并别名 | ✅ |
 | 交叉验证只统计对该市场有效的数据源 | ✅ |
-| Radar 能展示携带真实信号的 Opportunity | ✅ |
+| 无 `DATABASE_URL` 时仍回落到 demo 数据，首次启动不失败 | ✅ |
+| **Radar 与详情页展示来自数据库的真实分数与证据** | ✅ |
+| **叙事字段（problem / JTBD / pain 等）显示「待生成」而非模板文案** | ✅ |
+
+最后一条是有意为之。当前 10 条 demo 共享同一套 `_BASE` 泛化描述，
+一旦真实数据进来还沿用它，用户看到的就是**用真分数包装的假叙事** ——
+比没有叙事更糟。在 LLM 抽取接上之前，这些字段应当诚实地空着。
+
+### Phase 2b — 聚类与叙事
+
+| 能力 | 要求 |
+| --- | --- |
+| `TOPIC_MATCH_THRESHOLD` 完成标定，含稳定性测试 | ✅ |
+| `clustering_version = 'embedding@1'`，回填且不破坏既有时间序列 | ✅ |
+| **Topic 归属稳定：同输入在多次运行间 topic id 不变** | ✅ |
+| LLM 抽取填充叙事字段，且不产出任何进入分数的数字 | ✅ |
 
 **刻意不设任何具体商业数据源的数量指标。**
 那衡量的是供应商谈判进度，而不是数据地基是否可用。
@@ -394,10 +426,10 @@ Google Trends 不在其中。把无效源计入验证票数，等于用噪音抬
 | 1 | v0.1 目标市场 | **中国优先。** `market` 列全链路存在，国际市场表结构预留、前端预留入口标 TODO、不实现 |
 | 2 | `MIN_REFERENCE_N` | **100**，且参照集中 **≥30% 为对照词**（`is_control = true`）。门槛治方差，对照词治偏差，缺一不可 |
 | 3 | Demand 被抑制时的 UI | Opportunity 正常展示，Momentum 正常展示，Demand 显示 `—` 并注明 `参照样本不足 (N=23/100)`，Market Score 标为部分并列出缺失分项。**禁止填充默认值** |
-| 4 | Embedding 模型 | **阿里云百炼 DashScope `text-embedding-v3`。** 服务器为 2核2G 且位于深圳，本地推理不可行、访问境外 API 不稳定；这不是技术最优解，是当前基础设施下唯一顺畅的选择。模型名记录在 `demand_topics.embedding_model`，换模型必须重跑标定 |
+| 4 | Embedding 模型（**2b 才需要**） | **阿里云百炼 DashScope `text-embedding-v3`。** 服务器为 2核2G 且位于深圳，本地推理不可行、访问境外 API 不稳定；这不是技术最优解，是当前基础设施下唯一顺畅的选择。模型名记录在 `demand_topics.embedding_model`，换模型必须重跑标定 |
 | 5 | `redistribution_scope` | 全部默认 **`internal_only`**，逐源在条款确认后放宽。不阻塞 Phase 2，因为验收标准不含任何商业源 |
 
-## 九、待标定项
+## 九、待标定项（Phase 2b）
 
 `TOPIC_MATCH_THRESHOLD` **无法从第一性原理推导**，必须在真实数据上标定。
 它取决于所选 embedding 模型和实际查询词分布。暂定占位值 **0.82**，
@@ -405,7 +437,8 @@ Google Trends 不在其中。把无效源计入验证票数，等于用噪音抬
 
 标定流程：
 
-1. 取约 200 条真实查询词，**人工标注**哪些属于同一需求
+1. 取约 200 条真实查询词，**人工标注**哪些属于同一需求 ——
+   2a 阶段通过 `topic_queries` 手工合并的别名，直接作为这份标注
 2. 阈值从 0.70 到 0.95 扫描，选与人工标注吻合度最高的
 3. **稳定性测试**：同一批数据加少量新数据连跑两次，检查 topic id 是否错乱
 
