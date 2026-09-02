@@ -1,9 +1,22 @@
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, computed_field
+
+from app.scoring.confidence import ConfidenceLabel, confidence_label
 
 Momentum = Literal["Rising", "Surging", "Stable"]
+
+
+class ConfidenceLabelled(BaseModel):
+    """Derives the displayed label from the score so the two cannot drift apart."""
+
+    confidenceScore: int = Field(ge=0, le=100)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def confidenceLabel(self) -> ConfidenceLabel:
+        return confidence_label(self.confidenceScore)
 
 
 class Evidence(BaseModel):
@@ -15,14 +28,13 @@ class Evidence(BaseModel):
     sourceUrl: HttpUrl
 
 
-class Opportunity(BaseModel):
+class Opportunity(ConfidenceLabelled):
     id: str
     title: str
     region: str
     category: str
     momentum: Momentum
     marketScore: int = Field(ge=0, le=100)
-    confidenceScore: int = Field(ge=0, le=100)
     oneLineSummary: str
     problem: str
     targetUser: str
@@ -35,14 +47,13 @@ class Opportunity(BaseModel):
     evidence: list[Evidence]
 
 
-class OpportunitySummary(BaseModel):
+class OpportunitySummary(ConfidenceLabelled):
     id: str
     title: str
     region: str
     category: str
     momentum: Momentum
     marketScore: int
-    confidenceScore: int
     oneLineSummary: str
     whyNow: str
 

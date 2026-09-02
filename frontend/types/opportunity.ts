@@ -1,6 +1,6 @@
 export type OpportunitySummary = {
   id: string; title: string; region: string; category: string; momentum: "Rising" | "Surging" | "Stable";
-  marketScore: number; confidenceScore: number; oneLineSummary: string;
+  marketScore: number; confidenceScore: number; confidenceLabel: "Low" | "Medium" | "High"; oneLineSummary: string;
   whyNow: string;
 };
 
