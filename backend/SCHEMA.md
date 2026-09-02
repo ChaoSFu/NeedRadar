@@ -2,6 +2,8 @@
 
 Database persistence belongs exclusively to the FastAPI backend. Phase 2 will materialize these tables through SQLAlchemy/Alembic migrations; the Phase 1 API deliberately runs only demo fixtures.
 
+> The `raw_signals` metric fields below are superseded by [phase-2-data-foundation.md](../phase-2-data-foundation.md), which splits measurements into a separate `signal_metrics` table. A single `search_volume` column cannot hold Google Trends search interest, a 百度指数 value, and a 千瓜 heat value without losing what each one means.
+
 | Table | Responsibility | Key fields |
 | --- | --- | --- |
 | `signal_sources` | Source configuration | `name`, `type`, `platform`, `country_code`, `is_active` |

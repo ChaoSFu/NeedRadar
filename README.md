@@ -59,4 +59,4 @@ sudo ./scripts/needradar-service logs -f
 
 Both units use `KillMode=control-group`, so a stop or restart terminates Uvicorn workers, npm, and Next.js child processes together rather than leaving orphaned processes.
 
-See [architecture.md](architecture.md), [route-map.md](route-map.md), and [implementation-checklist.md](implementation-checklist.md).
+See [architecture.md](architecture.md), [route-map.md](route-map.md), [implementation-checklist.md](implementation-checklist.md), and [phase-2-data-foundation.md](phase-2-data-foundation.md).
