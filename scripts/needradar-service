@@ -41,6 +41,31 @@ install_units() {
     echo "Missing frontend production build. Run npm run build first." >&2
     exit 1
   fi
+  if [[ ! -f "$PROJECT_DIR/backend/.env" ]]; then
+    echo "Missing backend/.env, which the unit loads as EnvironmentFile." >&2
+    echo "Create it first: cp backend/.env.example backend/.env" >&2
+    exit 1
+  fi
+
+  local service_user
+  service_user="$(awk -F= '/^User=/ { print $2; exit }' \
+    "$PROJECT_DIR/deployment/systemd/needradar-api.service")"
+  if ! id -u "$service_user" >/dev/null 2>&1; then
+    echo "Service user '$service_user' does not exist." >&2
+    echo "Create it first: useradd --system --shell /sbin/nologin $service_user" >&2
+    exit 1
+  fi
+
+  # ProtectHome=true hides /root and /home from the service, so a checkout there
+  # is unreachable at runtime even though install would succeed.
+  case "$PROJECT_DIR" in
+    /root|/root/*|/home/*)
+      echo "The project is checked out at $PROJECT_DIR, but both units set ProtectHome=true," >&2
+      echo "which makes /root and /home invisible to the service." >&2
+      echo "Move the checkout to /opt/needradar, or remove ProtectHome from the unit files." >&2
+      exit 1
+      ;;
+  esac
 
   sed "s|/opt/needradar|$PROJECT_DIR|g" "$PROJECT_DIR/deployment/systemd/needradar-api.service" \
     > "/etc/systemd/system/$API_UNIT"
@@ -56,6 +81,14 @@ is_active() {
   systemctl is-active --quiet "$1"
 }
 
+dump_diagnostics() {
+  local unit="$1"
+  echo "--- systemctl status $unit ---" >&2
+  systemctl --no-pager --full status "$unit" >&2 || true
+  echo "--- journalctl -n 40 -u $unit ---" >&2
+  journalctl --no-pager -n 40 -u "$unit" >&2 || true
+}
+
 api_health() {
   curl --fail --silent --show-error "$API_URL"
   echo
@@ -66,8 +99,14 @@ web_health() {
 }
 
 health() {
-  api_health
-  web_health
+  if ! api_health; then
+    echo "API health check failed at $API_URL" >&2
+    return 1
+  fi
+  if ! web_health; then
+    echo "Web health check failed at $WEB_URL" >&2
+    return 1
+  fi
   echo "API and web service are healthy."
 }
 
@@ -78,12 +117,14 @@ wait_for_api() {
       return 0
     fi
     if ! is_active "$API_UNIT"; then
-      echo "API exited before becoming healthy. Run: $0 logs" >&2
+      echo "API exited before becoming healthy." >&2
+      dump_diagnostics "$API_UNIT"
       return 1
     fi
     sleep 1
   done
-  echo "API did not become healthy within 30 seconds. Run: $0 logs" >&2
+  echo "API did not become healthy within 30 seconds." >&2
+  dump_diagnostics "$API_UNIT"
   return 1
 }
 
@@ -91,16 +132,18 @@ wait_for_web() {
   local attempt
   for attempt in $(seq 1 30); do
     if web_health >/dev/null 2>&1; then
-      health
+      echo "API and web service are healthy."
       return 0
     fi
     if ! is_active "$WEB_UNIT"; then
-      echo "Web service exited before becoming healthy. Run: $0 logs" >&2
+      echo "Web service exited before becoming healthy." >&2
+      dump_diagnostics "$WEB_UNIT"
       return 1
     fi
     sleep 1
   done
-  echo "Web service did not become healthy within 30 seconds. Run: $0 logs" >&2
+  echo "Web service did not become healthy within 30 seconds." >&2
+  dump_diagnostics "$WEB_UNIT"
   return 1
 }
 
