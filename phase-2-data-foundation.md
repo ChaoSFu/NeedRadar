@@ -211,10 +211,11 @@ CREATE TABLE demand_topics (
     name               text NOT NULL,
     summary            text,
     category           text,
-    -- 2a 阶段 clustering_version = 'identity@1'，不需要向量，两列留空。
-    -- 2b 接入 embedding 后才写入，届时 clustering_version = 'embedding@1'。
-    centroid           vector(1024),            -- pgvector，维度随所选模型
-    embedding_model    text,
+    -- 2a 阶段 clustering_version = 'identity@1'，不需要向量。
+    -- centroid 由 2b 的迁移连同 pgvector 扩展一起加入，2a 的迁移不创建它 ——
+    -- 加一列是很轻的迁移，为零收益引入扩展依赖不划算。
+    -- centroid        vector(1024),            -- 2b 才创建
+    embedding_model    text,                    -- 2b 才写入
     clustering_version text NOT NULL,
     first_seen_at      timestamptz NOT NULL,
     last_seen_at       timestamptz NOT NULL,

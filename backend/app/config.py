@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     mock_ai: bool = True
+    database_url: str | None = None
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     @property
