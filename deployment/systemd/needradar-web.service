@@ -1,0 +1,22 @@
+[Unit]
+Description=NeedRadar Next.js
+After=network.target needradar-api.service
+
+[Service]
+Type=simple
+User=needradar
+Group=needradar
+WorkingDirectory=/opt/needradar/frontend
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=API_INTERNAL_ORIGIN=http://127.0.0.1:8000
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,3 @@
+import Link from "next/link";
+const links = [{ href: "/radar", label: "Radar" }, { href: "/watchlist", label: "Watchlist" }, { href: "/validation", label: "Validation" }, { href: "/import", label: "Import" }, { href: "/settings", label: "Settings" }];
+export function SiteHeader() { return <header className="border-b border-slate-200 bg-white"><nav className="mx-auto flex max-w-6xl items-center gap-8 px-6 py-4"><Link className="font-semibold tracking-tight" href="/radar">NeedRadar <span className="text-slate-400">/ 需求雷达</span></Link><div className="ml-auto flex gap-5 text-sm text-slate-600">{links.map((link) => <Link key={link.href} href={link.href}>{link.label}</Link>)}</div></nav></header>; }
